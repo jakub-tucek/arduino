@@ -7,11 +7,13 @@ ESP32 Arduino projects collection for IoT and display applications.
 | Project | Description |
 |---------|-------------|
 | **[transit-stop-board](transit-stop-board/)** | 240x320 touch LCD showing live transit departures via a departureboards API |
-| **[sensor](sensor/)** | ESP32 temperature/humidity sensor posting data to HTTP endpoint |
+| **[sensor](sensor/)** | Sensor system: ESP32 GY-BMP280 firmware, external-server gateway, and NAS ingestion/storage |
 
 ## Getting Started
 
-Each project is a standalone PlatformIO project. Navigate to the project folder for specific setup instructions.
+The transit board and `sensor/firmware/` are standalone PlatformIO projects.
+The sensor gateway and NAS projects have their own deployment setup. See each
+project's README.
 
 ### Prerequisites
 
@@ -22,7 +24,7 @@ Each project is a standalone PlatformIO project. Navigate to the project folder 
 
 ```bash
 # Copy config example and edit with your settings
-cp src/config.example.h src/config.h
+cp config.example.h config.h
 
 # Build
 pio run
