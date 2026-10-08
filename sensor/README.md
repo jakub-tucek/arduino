@@ -14,7 +14,9 @@ BMP280 → ESP32 → Wi-Fi → external server HTTPS gateway
                                NAS API → SQLite
 ```
 
-The ESP32 uses the gateway's public HTTPS URL. Tailscale runs on the external
+The ESP32 POSTs to the gateway's public HTTPS URL, such as
+`https://sensors.example.com/api/readings`. Set the real endpoint in the ignored
+`firmware/config.h`. Tailscale runs on the external
 server and NAS. The gateway is intentionally only Caddy reverse proxy config;
 real deployment config stays on the server and only public examples live in git.
 Data lives in SQLite on a local NAS volume. No gateway on the sensor LAN is

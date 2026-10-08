@@ -7,7 +7,7 @@
 const char* DEVICE_NAME = "living-room";
 // Empty means use the ESP32 MAC address. Keep this stable across renames.
 const char* DEVICE_ID = "";
-const char* API_ENDPOINT = "http://192.168.1.10:8080/readings";
+const char* API_ENDPOINT = "https://sensors.example.com/api/readings";
 // For HTTPS, paste the endpoint's trusted root CA PEM here. Never skip validation.
 const char* API_ROOT_CA = "";
 
