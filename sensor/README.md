@@ -1,29 +1,29 @@
 # Sensor system
 
-Three projects live here:
-
 | Project | Role | Status |
 |---------|------|--------|
-| [firmware](firmware/) | ESP32 + GY-BMP280 nodes send readings over Wi-Fi | Live temperature/pressure readings verified; uploads pending |
-| [gateway](gateway/) | Caddy reverse proxy forwards HTTPS requests to NAS through Tailscale | Config template added |
-| [nas](nas/) | NAS ingestion API and SQLite store readings | Planned |
+| [firmware](firmware/) | ESP32 + BMP280 readings over Wi-Fi | Upload authentication header still needed |
+| [gateway](gateway/) | Caddy HTTPS homepage and protected monitoring routes | Deployed |
+| [server](server/) | Local API, SQLite, Prometheus, Grafana via Podman Compose | Deployed |
+| [nas](nas/) | Previous NAS storage proposal | Superseded by local server stack |
 
 ```text
-BMP280 → ESP32 → Wi-Fi → external server HTTPS gateway
-                                      ↓ Tailscale
-                               NAS API → SQLite
+BMP280 → ESP32 → HTTPS /api/readings → Caddy → local ingestion → SQLite
+                                                   ↓ /metrics
+                                              Prometheus → Grafana
 ```
 
 The ESP32 POSTs to the gateway's public HTTPS URL, such as
-`https://sensors.example.com/api/readings`. Set the real endpoint in the ignored
-`firmware/config.h`. Tailscale runs on the external
-server and NAS. The gateway is intentionally only Caddy reverse proxy config;
-real deployment config stays on the server and only public examples live in git.
-Data lives in SQLite on a local NAS volume. No gateway on the sensor LAN is
-needed.
+`https://iot.example.com/api/readings`. Set the real endpoint in the ignored
+`firmware/config.h`.
 
-Firmware setup and wiring: [firmware/README.md](firmware/README.md).
+The public server hosts the complete stack. No NAS dependency or sensor-LAN
+gateway is needed. Backend ports bind only to localhost. Caddy exposes the
+homepage, authenticated `/grafana/` and `/prometheus/`, and the API endpoint.
+Real deployment configuration and secrets stay outside Git.
 
-Before deploying, add per-device authentication to the firmware and ingestion
-path. Current firmware drops readings when uploads fail; retaining readings
-through NAS outages needs a queue.
+Firmware setup: [firmware/README.md](firmware/README.md).
+Server deployment and limits: [server/README.md](server/README.md).
+
+The API currently uses a shared bearer key. Firmware must send it; per-device
+keys remain future work. Failed uploads are dropped rather than queued.

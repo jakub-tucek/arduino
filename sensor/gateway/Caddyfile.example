@@ -1,24 +1,44 @@
 # Example only. Do not commit the real Caddyfile with public domain,
-# Tailscale IP/hostname, or private paths filled in.
+# credentials, local ports, or private paths filled in.
 #
-# Copy to the external server as /etc/caddy/Caddyfile and replace:
-# - sensors.example.com with the public HTTPS hostname used by ESP32 devices
-# - nas-host.tailnet-name.ts.net:8080 with the NAS ingestion API address/port
-#
-# Keep the external path and NAS path the same so the gateway only proxies.
-# The sensor hostname exposes the NAS API under /api.
+# Copy to the server as /etc/caddy/Caddyfile and replace:
+# - iot.example.com with the public IoT hostname
+# - localhost ports with the real local service ports
+# - basicauth hash with a real value from: caddy hash-password
 
-sensors.example.com {
-	# Optional but useful for troubleshooting proxy errors.
-	log {
-		output file /var/log/caddy/sensor-gateway.log
-		format json
+{
+	email admin@example.com
+}
+
+iot.example.com {
+	# Dedicated API path for devices and ingestion clients.
+	@api path /api /api/*
+	handle @api {
+		reverse_proxy 127.0.0.1:8095
 	}
 
-	# Forward only the NAS API to the NAS over Tailscale.
-	@nas_api path /api*
-	reverse_proxy @nas_api http://nas-host.tailnet-name.ts.net:8080
+	# Monitoring UIs are exposed under the same hostname and protected by auth.
+	# Set Grafana root_url to https://<host>/grafana/; serve_from_sub_path=false.
+	redir /grafana /grafana/ 308
+	handle_path /grafana/* {
+		basicauth {
+			admin <caddy-hashed-password>
+		}
+		reverse_proxy 127.0.0.1:3000
+	}
 
-	# Do not expose anything else on this hostname.
-	respond "not found" 404
+	# Prometheus external-url includes /prometheus/; route-prefix=/.
+	redir /prometheus /prometheus/ 308
+	handle_path /prometheus/* {
+		basicauth {
+			admin <caddy-hashed-password>
+		}
+		reverse_proxy 127.0.0.1:9090
+	}
+
+	# Public landing page with links to API/Grafana/Prometheus.
+	handle {
+		root * /var/www/iot
+		file_server
+	}
 }
