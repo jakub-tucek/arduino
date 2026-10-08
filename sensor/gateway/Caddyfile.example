@@ -1,0 +1,24 @@
+# Example only. Do not commit the real Caddyfile with public domain,
+# Tailscale IP/hostname, or private paths filled in.
+#
+# Copy to the external server as /etc/caddy/Caddyfile and replace:
+# - sensors.example.com with the public HTTPS hostname used by ESP32 devices
+# - nas-host.tailnet-name.ts.net:8080 with the NAS ingestion API address/port
+#
+# Keep the external path and NAS path the same so the gateway only proxies.
+# The sensor hostname exposes the NAS API under /api.
+
+sensors.example.com {
+	# Optional but useful for troubleshooting proxy errors.
+	log {
+		output file /var/log/caddy/sensor-gateway.log
+		format json
+	}
+
+	# Forward only the NAS API to the NAS over Tailscale.
+	@nas_api path /api*
+	reverse_proxy @nas_api http://nas-host.tailnet-name.ts.net:8080
+
+	# Do not expose anything else on this hostname.
+	respond "not found" 404
+}

@@ -1,0 +1,8 @@
+# Real deployment config belongs on the server, not in git.
+Caddyfile
+*.local
+.env
+.env.*
+
+# Keep public templates/examples tracked.
+!*.example

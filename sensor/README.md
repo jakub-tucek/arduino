@@ -5,7 +5,7 @@ Three projects live here:
 | Project | Role | Status |
 |---------|------|--------|
 | [firmware](firmware/) | ESP32 + GY-BMP280 nodes send readings over Wi-Fi | Live temperature/pressure readings verified; uploads pending |
-| [gateway](gateway/) | External server accepts HTTPS and forwards through Tailscale | Planned |
+| [gateway](gateway/) | Caddy reverse proxy forwards HTTPS requests to NAS through Tailscale | Config template added |
 | [nas](nas/) | NAS ingestion API and SQLite store readings | Planned |
 
 ```text
@@ -15,8 +15,10 @@ BMP280 → ESP32 → Wi-Fi → external server HTTPS gateway
 ```
 
 The ESP32 uses the gateway's public HTTPS URL. Tailscale runs on the external
-server and NAS. Data lives in SQLite on a local NAS volume. No gateway on the
-sensor LAN is needed.
+server and NAS. The gateway is intentionally only Caddy reverse proxy config;
+real deployment config stays on the server and only public examples live in git.
+Data lives in SQLite on a local NAS volume. No gateway on the sensor LAN is
+needed.
 
 Firmware setup and wiring: [firmware/README.md](firmware/README.md).
 
