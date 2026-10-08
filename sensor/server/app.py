@@ -28,7 +28,12 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def do_GET(self):
-        if self.path == '/health':
+        if self.path in ('/health', '/api/health'):
+            try:
+                with sqlite3.connect(f'file:{DB}?mode=rw', uri=True, timeout=2) as db:
+                    db.execute('SELECT received_at FROM readings LIMIT 1').fetchone()
+            except sqlite3.Error:
+                return self.reply(503, '{"status":"unavailable"}')
             return self.reply(200, '{"status":"ok"}')
         if self.path != '/metrics':
             return self.reply(404, '{}')

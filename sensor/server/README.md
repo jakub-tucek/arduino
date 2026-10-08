@@ -41,8 +41,8 @@ POST JSON using the [firmware payload](../firmware/README.md#api-payload) with
 key; per-device credentials and quotas are future improvements. Firmware must
 be updated to send the header before uploads can work.
 
-Only `/api/readings` is publicly routed to the ingestion app. `/health` and
-`/metrics` stay internal. Prometheus scrapes the latest stored reading and its
+Public API paths are `/api/readings` and unauthenticated `GET /api/health`
+(database-read readiness check). `/health` and `/metrics` stay internal. Prometheus scrapes the latest stored reading and its
 receipt time every 30 seconds. Grafana includes a provisioned Sensors dashboard.
 
 ## Limits and persistence

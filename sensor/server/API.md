@@ -84,11 +84,26 @@ curl --fail-with-body "https://<iot-hostname>/api/readings" \
 ESP32 firmware must add the bearer header to its HTTP client and validate the
 server certificate using a trusted root CA. Never disable TLS verification.
 
+## Health check
+
+`GET https://<iot-hostname>/api/health` requires no API key and checks that the
+SQLite database can be opened and the readings table queried.
+
+- Healthy: `200 {"status":"ok"}`.
+- Database unavailable: `503 {"status":"unavailable"}`.
+
+```sh
+curl --fail https://<iot-hostname>/api/health
+```
+
+This is a lightweight database-read check, not a guarantee of disk space or
+write availability. Responses expose no credentials or device data.
+
 ## Internal endpoints
 
 Not routed publicly through Caddy:
 
-- `GET /health` → `200 {"status":"ok"}` (process liveness only).
+- `GET /health` — same check as `/api/health`.
 - `GET /metrics` → Prometheus text exposition of the latest reading per
   `(device_id, sensor_id)`:
   - `sensor_temperature_celsius`
