@@ -2,12 +2,14 @@
 
 `sensor/firmware/` is the shared firmware for temperature sensor nodes.
 Each ESP32 reads one or
-two GY-BMP280 modules and POSTs one JSON reading per sensor to the same API.
+two GY-BMP280 or GY-BME280 modules and POSTs one JSON reading per sensor to the same API.
 
 ## Hardware
 
 Each Wi-Fi node needs an ESP32 and a BMP280. The BMP280 itself has no Wi-Fi.
 BMP280 measures temperature and pressure only; it has no humidity sensor.
+Firmware also detects BME280 automatically and uses its temperature/pressure
+readings. Humidity sampling is disabled to match the ingestion payload.
 
 | GY-BMP280 | ESP32 default |
 |-----------|---------------|
@@ -42,7 +44,9 @@ Run from `sensor/firmware/`:
 
 ```sh
 cp config.example.h config.h
-# Edit config.h: Wi-Fi credentials, API endpoint, device name, sensor addresses.
+cp .env.example .env
+# Edit .env: Wi-Fi credentials, HTTPS API endpoint, API key.
+# Edit config.h: device name and sensor wiring/addresses.
 pio run
 pio run --target upload
 pio device monitor -b 115200 -f direct
@@ -50,6 +54,52 @@ pio device monitor -b 115200 -f direct
 
 `config.h` is ignored by Git. Existing DHT22 configs need to be updated from
 the new example; this firmware now uses BMP280 via I²C.
+
+`.env` is also ignored. PlatformIO's `load_env.py` generates a private header
+inside `.pio/` before compilation, so secrets do not appear in compiler flags.
+The flashed firmware contains the credentials; keep build artifacts private.
+`.env` uses one `KEY=value` per line, with optional surrounding quotes and no
+variable expansion. Set `API_ENDPOINT` to the full `/api/readings` URL and
+`API_KEY` to the server's shared ingestion key. Uploads send
+`Authorization: Bearer <API_KEY>` and require HTTPS. See the
+[API contract](../server/API.md).
+Optional `DEVICE_NAME` and `SENSOR_ID` entries set the device name and first
+sensor's stored identifier. Keep `SENSOR_ID` stable for continuous history.
+`LOCATION` and `GROUP` set the location and equipment group sent with every
+reading on this device.
+Wi-Fi DHCP hostname defaults to `SENSOR_ID`. Optionally set `WIFI_HOSTNAME`
+in `.env` to a unique hostname of at most 63 letters/digits/hyphens, with no
+leading/trailing hyphen. The hostname is set before Wi-Fi starts. Routers may
+need a new DHCP lease to display the updated name. This does not enable mDNS.
+
+### Separate device profiles
+
+Keep private settings in `.env.inside` and `.env.outside`; both are ignored by
+Git. Each profile contains its own credentials, sensor ID, and calibration.
+Create new profiles from `.env.example`. No editing a shared file between uploads.
+
+```sh
+# Build both profiles.
+pio run -e inside -e outside
+# Connect the matching ESP32, then upload exactly one profile.
+pio run -e inside --target upload --upload-port /dev/cu.SLAB_USBtoUART
+pio run -e outside --target upload --upload-port /dev/cu.SLAB_USBtoUART
+```
+
+The generic `esp32dev` environment still reads `.env`. Named environments use
+their own profile and build directory. A missing selected profile fails the build.
+
+### Temperature correction
+
+`TEMPERATURE_OFFSET_C` is added to the first sensor's raw temperature before
+logging and uploading. Default is `0.0`; positive values raise the reported
+temperature. Other sensors can have their own offset in `SENSORS`.
+Serial output includes raw temperature and the applied offset. Pressure
+compensation always uses the sensor's raw temperature, not this correction.
+
+Calibrate after both sensors settle side by side. Matching one sensor to another
+does not establish absolute accuracy. Changes affect new readings only; stored
+history is not rewritten.
 
 For multiple nodes:
 
@@ -64,7 +114,7 @@ Each sensor initializes and uploads independently. Missing sensors retry on
 the next cycle. Wi-Fi reconnects automatically; offline readings are logged
 to serial and dropped. Failed uploads are dropped too, with no persistent queue.
 The default cycle sleeps 30 seconds after reads/uploads; HTTP time adds to it.
-The BMP280 uses forced mode: one measurement per cycle, then sensor sleep to
+Both sensor types use forced mode: one measurement per cycle, then sensor sleep to
 reduce self-heating. Temperature is chip temperature; compare against a
 reference thermometer after both have settled in the same location.
 
@@ -74,10 +124,11 @@ One POST per sensor, `Content-Type: application/json`:
 
 ```json
 {
+  "location": "home",
+  "group": "room",
   "device_id": "AA:BB:CC:DD:EE:FF",
   "device_name": "living-room",
   "sensor_id": "room",
-  "sensor_type": "bmp280",
   "temperature": 22.4,
   "pressure_hpa": 1013.25,
   "timestamp": 30123
@@ -91,13 +142,15 @@ resets on reboot, and wraps after about 49.7 days. Use API receipt time for
 wall-clock storage. The API must accept the added fields and return a 2xx
 status on success.
 
-For HTTPS, set `API_ROOT_CA` to the endpoint's trusted root CA PEM. The ESP32
-syncs its clock through `NTP_SERVER`; HTTPS uploads wait for a valid clock.
+HTTPS trusts Let's Encrypt ISRG Root X1 by default. For another issuer, set
+`API_ROOT_CA_FILE` in `.env` to a trusted root CA PEM file, or override
+`API_ROOT_CA` in private `config.h`. The ESP32 syncs its clock through
+`NTP_SERVER`; HTTPS uploads wait for a valid clock.
 
 ## Tailscale
 
-For this system, set `API_ENDPOINT` to the external gateway's public HTTPS
-URL and configure `API_ROOT_CA`. The external server forwards to the NAS
+For this system, set `API_ENDPOINT` in `.env` to the external gateway's public
+HTTPS URL. The external server forwards to the NAS
 through Tailscale; the ESP32 needs only normal Wi-Fi internet access.
 See the [system layout](../README.md), [gateway](../gateway/), and [NAS](../nas/).
 The LAN gateway options below are reference setups for other deployments.

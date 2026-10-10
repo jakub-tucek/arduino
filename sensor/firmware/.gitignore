@@ -4,6 +4,9 @@
 
 # Config file with sensitive data
 config.h
+.env
+.env.*
+!.env.example
 
 # Build artifacts
 *.elf

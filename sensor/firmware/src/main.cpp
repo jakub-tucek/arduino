@@ -3,32 +3,51 @@
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 #include <Adafruit_BMP280.h>
+#include <Adafruit_BME280.h>
 #include <Wire.h>
 #include <time.h>
+#include "device_secrets.h"
 #include "../config.h"
 
 constexpr size_t SENSOR_COUNT = sizeof(SENSORS) / sizeof(SENSORS[0]);
 static_assert(SENSOR_COUNT > 0 && SENSOR_COUNT <= 2,
-              "One I2C bus supports one or two BMP280 addresses (0x76, 0x77)");
+              "One I2C bus supports one or two BMP280/BME280 addresses (0x76, 0x77)");
 static_assert(REPORT_INTERVAL_MS > 0, "Report interval must be positive");
 
 Adafruit_BMP280 sensors[SENSOR_COUNT];
+Adafruit_BME280 bmeSensors[SENSOR_COUNT];
+bool isBme[SENSOR_COUNT] = {};
 bool sensorReady[SENSOR_COUNT] = {};
 String deviceId;
 
 bool initSensor(size_t index) {
+    isBme[index] = false;
     bool ready = sensors[index].begin(SENSORS[index].address);
     if (ready) {
         // One conversion per report; sleep between reports to reduce self-heating.
         sensors[index].setSampling(Adafruit_BMP280::MODE_FORCED);
+    } else {
+        ready = bmeSensors[index].begin(SENSORS[index].address, &Wire);
+        if (ready) {
+            isBme[index] = true;
+            bmeSensors[index].setSampling(Adafruit_BME280::MODE_FORCED,
+                                         Adafruit_BME280::SAMPLING_X16,
+                                         Adafruit_BME280::SAMPLING_X16,
+                                         Adafruit_BME280::SAMPLING_NONE);
+        }
     }
     Serial.printf("Sensor %s at 0x%02X: %s\n", SENSORS[index].id,
-                  SENSORS[index].address, ready ? "ready" : "BMP280 not found");
+                  SENSORS[index].address,
+                  ready ? (isBme[index] ? "BME280 ready" : "BMP280 ready") : "BMP280/BME280 not found");
     return ready;
 }
 
 void postReading(size_t index, float temperature, float pressure) {
     if (WiFi.status() != WL_CONNECTED) {
+        return;
+    }
+    if (!String(API_ENDPOINT).startsWith("https://") || !API_KEY[0]) {
+        Serial.println("Upload requires HTTPS and an API key; skipping upload");
         return;
     }
 
@@ -52,12 +71,14 @@ void postReading(size_t index, float temperature, float pressure) {
     http.setConnectTimeout(HTTP_TIMEOUT_MS);
     http.setTimeout(HTTP_TIMEOUT_MS);
     http.addHeader("Content-Type", "application/json");
+    http.addHeader("Authorization", String("Bearer ") + API_KEY);
 
     StaticJsonDocument<512> doc;
+    doc["location"] = LOCATION;
+    doc["group"] = GROUP;
     doc["device_id"] = deviceId;
     doc["device_name"] = DEVICE_NAME;
     doc["sensor_id"] = SENSORS[index].id;
-    doc["sensor_type"] = "bmp280";
     doc["temperature"] = temperature;
     doc["pressure_hpa"] = pressure;
     // Preserve the original timestamp field: uptime in milliseconds, not Unix time.
@@ -68,6 +89,7 @@ void postReading(size_t index, float temperature, float pressure) {
     int code = http.POST(payload);
     if (code >= 200 && code < 300) {
         Serial.printf("Sensor %s uploaded: HTTP %d\n", SENSORS[index].id, code);
+        Serial.println(http.getString());
     } else {
         Serial.printf("Sensor %s upload failed: HTTP %d\n", SENSORS[index].id, code);
     }
@@ -118,6 +140,12 @@ void setup() {
         sensorReady[i] = initSensor(i);
     }
 
+    // Set before starting WiFi so DHCP advertises the device's name.
+    if (WiFi.setHostname(WIFI_HOSTNAME)) {
+        Serial.printf("WiFi hostname: %s\n", WIFI_HOSTNAME);
+    } else {
+        Serial.println("Failed to set WiFi hostname");
+    }
     WiFi.mode(WIFI_STA);
     deviceId = DEVICE_ID[0] ? String(DEVICE_ID) : WiFi.macAddress();
     WiFi.setAutoReconnect(true);
@@ -140,14 +168,16 @@ void loop() {
             }
         }
 
-        if (!sensors[i].takeForcedMeasurement()) {
+        bool measured = isBme[i] ? bmeSensors[i].takeForcedMeasurement()
+                                 : sensors[i].takeForcedMeasurement();
+        if (!measured) {
             Serial.printf("Measurement failed for sensor %s\n", SENSORS[i].id);
             sensorReady[i] = false;
             continue;
         }
-        float temperature = sensors[i].readTemperature();
-        float pressure = sensors[i].readPressure() / 100.0F;
-        // BMP280 operating ranges. Reject corrupted reads instead of uploading them.
+        float temperature = isBme[i] ? bmeSensors[i].readTemperature() : sensors[i].readTemperature();
+        float pressure = (isBme[i] ? bmeSensors[i].readPressure() : sensors[i].readPressure()) / 100.0F;
+        // BMP280/BME280 operating ranges. Reject corrupted reads instead of uploading them.
         if (!isfinite(temperature) || !isfinite(pressure) ||
             temperature < -40 || temperature > 85 || pressure < 300 || pressure > 1100) {
             Serial.printf("Invalid reading from %s: %.2f°C, %.2f hPa\n",
@@ -156,9 +186,15 @@ void loop() {
             continue;
         }
 
-        Serial.printf("%s: %.2f°C, %.2f hPa\n", SENSORS[i].id,
-                      temperature, pressure);
-        postReading(i, temperature, pressure);
+        float correctedTemperature = temperature + SENSORS[i].temperatureOffsetC;
+        if (!isfinite(correctedTemperature)) {
+            Serial.printf("Invalid temperature offset for sensor %s\n", SENSORS[i].id);
+            continue;
+        }
+        Serial.printf("%s: %.2f°C, %.2f hPa (raw %.2f°C, offset %+.2f°C)\n",
+                      SENSORS[i].id, correctedTemperature, pressure,
+                      temperature, SENSORS[i].temperatureOffsetC);
+        postReading(i, correctedTemperature, pressure);
     }
     delay(REPORT_INTERVAL_MS);
 }
